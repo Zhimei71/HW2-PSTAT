@@ -1,0 +1,107 @@
+---
+title: "HW2"
+author: "Zhimei_Chen"
+date: '2022-10-16'
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Load packages & csv File
+```{r}
+library(dplyr)
+library(tidyverse)
+library(tidymodels)
+library(ggplot2)
+library(recipes)
+abalone<-read.csv("abalone.csv")
+```
+
+
+## Question 1
+```{r}
+abalone$age<-abalone$rings+1.5
+abalone
+ggplot(data=abalone,aes(x=age))+
+  geom_histogram(color="green")
+# The distribution is right-skewed.
+```
+
+
+## Question 2
+```{r}
+set.seed(123)
+train = sample(1:nrow(abalone), 3000) #3,000 obs in training
+abalone_train = abalone[train,]
+abalone_test = abalone[-train,] #the rest (1,177 obs) in testing
+```
+
+## Question 3
+```{r}
+# library(recipes) already in first part
+new_abalone_train <- abalone_train[,-c(9)]
+age_recipe<-recipe(age~.,data=new_abalone_train)%>%
+  step_dummy(all_nominal_predictors())%>%
+  step_interact(terms=~starts_with("type"):shucked_weight
+                +longest_shell:diameter
+                +shucked_weight:shell_weight)%>%
+  step_center(all_predictors())%>%
+  step_scale(all_predictors())
+summary(age_recipe)
+# We created age by using rings, so we can directly using rings +1.5 to get age, therefore, it's not fit to keep rings as predictors. 
+```
+
+## Question 4
+```{r}
+model<-linear_reg()%>%set_engine("lm")
+model
+#fit data in lm
+mo_fit<-model%>%fit(age~.,data=new_abalone_train)
+mo_fit
+```
+
+## Question 5
+```{r}
+wkflow<-workflow()%>%
+  add_model(model)%>%
+  add_recipe(age_recipe)
+wkflow
+```
+
+## Question 6
+Way 1
+```{r}
+myfit<-fit(wkflow,abalone_train)
+pred_h<-data.frame(type="F",longest_shell=0.50,diameter = 0.10, height = 0.30, whole_weight = 4, shucked_weight = 1, viscera_weight = 2, shell_weight = 1)
+pred_h
+predict(myfit,pred_h) #20.96601
+```
+
+Way 2 (different answer but I don't know why I'm wrong.)
+```{r}
+wkflow%>%fit(abalone_train)
+```
+The fit coefficients show
+$$\hat{y}=11.46167+0.41139*longest.shell+1.82176*diameter+0.69250*height
+\\+4.88150*whole.weight-4.38789*shucked.weight-1.06149*viscera.weight
+\\+1.28045*shell.weight-0.85274(typeI)-0.21854(typeM)
+\\+0.44973*(typeI * shucked.weight)+0.30369*(typeM * shucked.weight)
+\\-2.26517*(longest.shell * diameter)-0.07129*(shucked.weight * shell.weight)$$
+
+Given female abalone with longest_shell = 0.50, diameter = 0.10, height = 0.30, whole_weight = 4, shucked_weight = 1, viscera_weight = 2, shell_weight = 1.
+$$\hat{y}=11.46167+0.41139*0.5+1.82176*0.1+0.69250*0.3+4.88150*4
+\\-4.38789*1-1.06149*2+1.28045*1-2.26517*(0.5 * 0.1)-0.07129*(1 * 1)$$
+$$\hat{y}=26.16832$$
+
+## Question 7
+```{r}
+library(yardstick)
+library(glmnet)
+mym<-metric_set(rsq,rmse,mae)
+abalone_train_pre1<-predict(myfit,abalone_train%>%select(-age))
+abalone_train_pre2<-bind_cols(abalone_train_pre1,abalone_train%>%select(age))
+mym(abalone_train_pre2,age,estimate= .pred)
+```
+
